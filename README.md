@@ -1,7 +1,24 @@
 # DSH 会话上下文瘦身工具包（Session Slim Kit）
-注意：这只是解决上下文问题，记忆插件需要额外安装，否则上下文消失后，还是会忘记所有东西。
+
+> **English keywords**: DSH (DeepSeek Harness) session compaction, context window optimization, token reduction, session log slim tool, LLM context trimming.
+
+## ⭐ 核心代码在这
+
+**`slim-session.cjs`** —— 会话瘦身主程序（裁剪 + 重排 + 校验 + 写回，一份文件搞定）。
+
+```powershell
+$env:ELECTRON_RUN_AS_NODE = '1'
+& "<DSH安装目录>\DeepSeek Harness.exe" --expose-internals .\slim-session.cjs <in.zstd> <out.zstd> 60
+```
+
+其它 `.cjs` 都是辅助分析/校验脚本（见下方清单），可选。
+
+**一句话效果**：3.47MB / 12141 事件、约 87 万 token → 331KB / 789 事件、约 5 万 token。
+
+---
+
 对 DeepSeek Harness（DSH）desktop 的会话日志做**物理瘦身**（删除旧历史、保留摘要+最近 N 轮）的离线工具集。
-配套完整原理文档见仓库/发行包内的《DSH 会话上下文瘦身完整报告》。
+配套完整原理文档见仓库/发行包内的《DSH 会话上下文瘦身完整报告》（`SESSION-SLIM-REPORT.md` / `.pdf`）。
 
 > ⚠️ 这是一套"离线手术刀"，不是日常工具。**日常长会话优先用官方 `/compact`**；只有当会话文件过大、想彻底瘦身时才用它。
 
@@ -17,7 +34,7 @@
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE = '1'
-& "<DSH安装目录>\DeepSeek Harness.exe" --expose-internals .\rewrite.cjs <in.zstd> <out.zstd> <K>
+& "<DSH安装目录>\DeepSeek Harness.exe" --expose-internals .\slim-session.cjs <in.zstd> <out.zstd> <K>
 ```
 
 > 脚本通过 asar 加载 DSH 自己的校验模块：
@@ -27,6 +44,15 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 ---
 
 ## 2. 脚本清单
+
+### 核心
+
+| 脚本 | 用途 | 用法 |
+|---|---|---|
+| ⭐ `slim-session.cjs` | **瘦身主程序**：按 turn 裁剪 + 删运行时日志 + 抢救状态事件 + 重排 seq/turn + 内置校验 + 写回 | `slim-session.cjs <in.zstd> <out.zstd> <K>` |
+| `codec-check.cjs` | 用 DSH 自己的 `restoreReleasedV4Artifact` 做完整校验（替换前必跑） | `codec-check.cjs <file>` |
+
+### 辅助分析/校验
 
 | 脚本 | 用途 | 用法 |
 |---|---|---|
@@ -39,9 +65,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 | `byday.cjs` | user/message 按天分布（估算删减影响） | `byday.cjs <file>` |
 | `overview.cjs` | 头部/尾部/surfaceOp/compaction 概览 | `overview.cjs <file>` |
 | `tail.cjs` | 尾部事件、最近 turn 边界 | `tail.cjs <file>` |
-| `rewrite.cjs` | **核心**：裁剪 + 重排 + 校验 + 写回 | `rewrite.cjs <in.zstd> <out.zstd> <K>` |
 | `derive-check.cjs` | 模拟 surface 折叠，看模型实际会收到的消息 | `derive-check.cjs <file>` |
-| `codec-check.cjs` | 用 DSH 自己的 `restoreReleasedV4Artifact` 做完整校验 | `codec-check.cjs <file>` |
 
 ---
 
@@ -68,7 +92,7 @@ refcheck.cjs  <file> 60       # 保留区间引用是否完整
 ### 第三步：生成
 
 ```powershell
-rewrite.cjs <in.zstd> <out.zstd> 60
+slim-session.cjs <in.zstd> <out.zstd> 60
 ```
 
 脚本会：按 turn 边界裁剪 → 删运行时日志（spliced/job）→ 抢救状态事件 → 插入 system+摘要 → 重排 turn/seq → 重映射引用 → **内置校验** → 写回。
@@ -132,4 +156,4 @@ derive-check.cjs <out.zstd>   # 看模型将看到的消息序列
 
 ---
 
-*Session Slim Kit v1.0*
+*Session Slim Kit v1.1*
